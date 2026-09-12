@@ -1,69 +1,220 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import Nav from "@/components/Nav";
+import Footer from "@/components/Footer";
+import DisclaimerBanner from "@/components/DisclaimerBanner";
+import UploadDropzone from "@/components/UploadDropzone";
+import SampleGallery, { SampleItem } from "@/components/SampleGallery";
+import ResultPanel from "@/components/ResultPanel";
+import HowItWorks from "@/components/HowItWorks";
+import SplashScreen from "@/components/SplashScreen";
+import { predictImage, fileToBase64 } from "@/lib/api";
+import { PredictResponse } from "@/lib/types";
+
+const CLASS_LABELS: Record<string, string> = {
+  akiec: "Actinic Keratosis",
+  bcc: "Basal Cell Carcinoma",
+  bkl: "Benign Keratosis",
+  df: "Dermatofibroma",
+  mel: "Melanoma",
+  nv: "Nevus",
+  vasc: "Vascular Lesion",
+};
 
 export default function Home() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<PredictResponse | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedSample, setSelectedSample] = useState<SampleItem | null>(null);
+
+  const runPrediction = async (file: File) => {
+    setError(null);
+    setIsLoading(true);
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
+    try {
+      const base64 = await fileToBase64(file);
+      const response = await predictImage(base64);
+      setResult(response);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "An unexpected error occurred.";
+
+      setError(message);
+      setPreviewUrl(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFileSelected = (file: File) => {
+    setSelectedSample(null);
+    runPrediction(file);
+  };
+
+  const handleRunSample = async () => {
+    if (!selectedSample) return;
+
+    try {
+      const res = await fetch(selectedSample.path);
+      const blob = await res.blob();
+      const file = new File([blob], `${selectedSample.id}.jpg`, {
+        type: blob.type || "image/jpeg",
+      });
+      runPrediction(file);
+    } catch {
+      setError(
+        "Failed to load sample image. Make sure the sample file is available in /public/samples.",
+      );
+    }
+  };
+
+  const handleReset = () => {
+    setResult(null);
+    setError(null);
+    setPreviewUrl(null);
+    setSelectedSample(null);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+    <div className="flex min-h-screen flex-col overflow-x-hidden">
+      {/* Do not modify */}
+      <SplashScreen />
+
+      <Nav />
+      <DisclaimerBanner compact />
+
+      {!result ? (
+        <main className="flex-1">
+          {/* =====================================================
+              HERO
+          ====================================================== */}
+          <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--teal-soft)] px-3 py-1 font-[family-name:var(--font-display)] text-xs font-medium">
+              <span className="font-semibold text-[var(--teal)]">
+                EfficientNet-B3 + Grad-CAM
+              </span>
+              <span className="text-[var(--border-strong)]">•</span>
+              <span className="text-[var(--ink)]">
+                Trained on the HAM10000 Dataset
+              </span>
+            </div>
+
+            <h1 className="mb-6 font-[family-name:var(--font-display)] text-4xl font-bold leading-[1.12] tracking-tight text-[var(--ink)] sm:text-5xl lg:text-[56px]">
+              Skin lesion classification with{" "}
+              <span className="text-[var(--teal)]">Explainable AI</span>{" "}
+              transparency.
+            </h1>
+
+            <p className="mx-auto max-w-2xl text-base leading-relaxed text-[var(--ink-muted)] sm:text-lg">
+              Intelligent visual inference for detecting 7 types of
+              dermatological lesions. Provides objective probability estimates
+              accompanied by Grad-CAM activations that can be visually verified.
+            </p>
+          </section>
+
+          {/* =====================================================
+              DEMO CARD (Upload + Sample Gallery)
+          ====================================================== */}
+          <section id="demo" className="mx-auto max-w-4xl px-6 pb-20">
+            <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-card)]">
+              <UploadDropzone
+                onFileSelected={handleFileSelected}
+                isLoading={isLoading}
+                errorMessage={error}
+                sampleReady={!!selectedSample}
+                onRunSample={handleRunSample}
+              />
+
+              <SampleGallery
+                selectedId={selectedSample?.id ?? null}
+                onSelect={setSelectedSample}
+              />
+            </div>
+          </section>
+
+          {/* =====================================================
+              STATS STRIP
+              IMPORTANT: the two values marked "—" are PLACEHOLDERS.
+              Replace them with the actual model evaluation results
+              from the Kaggle notebook before publishing. Do not use
+              fabricated numbers.
+          ====================================================== */}
+          <section className="border-y border-[var(--border)] bg-[var(--card)] py-12">
+            <div className="mx-auto grid max-w-5xl grid-cols-2 gap-8 px-6 text-center md:grid-cols-4">
+              <div>
+                <div className="font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[var(--teal)] sm:text-4xl">
+                  —%
+                </div>
+                <div className="mt-1 text-xs font-semibold uppercase tracking-wider text-[var(--ink)]">
+                  Top-1 Accuracy
+                </div>
+                <div className="mt-0.5 text-xs text-[var(--ink-muted)]">
+                  HAM10000 Test Split
+                </div>
+              </div>
+
+              <div>
+                <div className="font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[var(--ink)] sm:text-4xl">
+                  —%
+                </div>
+                <div className="mt-1 text-xs font-semibold uppercase tracking-wider text-[var(--ink)]">
+                  Sensitivity (Recall)
+                </div>
+                <div className="mt-0.5 text-xs text-[var(--ink-muted)]">
+                  Specific to Melanoma Cases
+                </div>
+              </div>
+
+              <div>
+                <div className="font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[var(--ink)] sm:text-4xl">
+                  10.015
+                </div>
+                <div className="mt-1 text-xs font-semibold uppercase tracking-wider text-[var(--ink)]">
+                  Training Images
+                </div>
+                <div className="mt-0.5 text-xs text-[var(--ink-muted)]">
+                  HAM10000 Dataset
+                </div>
+              </div>
+
+              <div>
+                <div className="font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[var(--amber)] sm:text-4xl">
+                  —
+                </div>
+                <div className="mt-1 text-xs font-semibold uppercase tracking-wider text-[var(--ink)]">
+                  Inference Latency
+                </div>
+                <div className="mt-0.5 text-xs text-[var(--ink-muted)]">
+                  Measured at deployment
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* =====================================================
+              HOW IT WORKS
+          ====================================================== */}
+          <HowItWorks />
+        </main>
+      ) : (
+        <main className="flex-1 bg-[var(--bg)]">
+          <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+            <ResultPanel
+              result={result}
+              originalImageUrl={previewUrl!}
+              labels={CLASS_LABELS}
+              onReset={handleReset}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          </div>
+        </main>
+      )}
+
+      <Footer />
     </div>
   );
 }
