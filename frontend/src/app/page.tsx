@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import DisclaimerBanner from "@/components/DisclaimerBanner";
 import UploadDropzone from "@/components/UploadDropzone";
+import AuthModal from "@/components/AuthModal";
 import SampleGallery, { SampleItem } from "@/components/SampleGallery";
 import ResultPanel from "@/components/ResultPanel";
 import HowItWorks from "@/components/HowItWorks";
@@ -37,7 +38,14 @@ export default function Home() {
     id: string;
     timestamp: Date;
   } | null>(null);
-
+  const [authOpen, setAuthOpen] = useState(false);
+  const requireAuth = () => {
+    if (!localStorage.getItem("access_token")) {
+      setAuthOpen(true);
+      return false;
+    }
+    return true;
+  };
   const runPrediction = async (file: File) => {
     setError(null);
     setIsLoading(true);
@@ -132,6 +140,7 @@ export default function Home() {
                 errorMessage={error}
                 sampleReady={!!selectedSample}
                 onRunSample={handleRunSample}
+                requireAuth={requireAuth}
               />
 
               <SampleGallery
@@ -210,6 +219,7 @@ export default function Home() {
       )}
 
       <Footer />
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
     </div>
   );
 }

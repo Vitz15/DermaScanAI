@@ -2,17 +2,26 @@ import { PredictResponse } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export async function predictImage(base64Image: string): Promise<PredictResponse> {
+export async function predictImage(
+  base64Image: string,
+): Promise<PredictResponse> {
+  const token = localStorage.getItem("access_token");
+
   const res = await fetch(`${API_URL}/api/predict`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ image: base64Image }),
   });
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => null);
     const message =
-      errBody?.detail?.message || errBody?.message || "Gagal memproses gambar. Coba lagi.";
+      errBody?.detail?.message ||
+      errBody?.message ||
+      "Gagal memproses gambar. Coba lagi.";
     throw new Error(message);
   }
 

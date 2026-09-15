@@ -8,6 +8,7 @@ interface UploadDropzoneProps {
   errorMessage: string | null;
   sampleReady?: boolean;
   onRunSample?: () => void;
+  requireAuth?: () => boolean;
 }
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/jpg", "image/png"];
@@ -19,6 +20,7 @@ export default function UploadDropzone({
   errorMessage,
   sampleReady = false,
   onRunSample,
+  requireAuth,
 }: UploadDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -46,6 +48,8 @@ export default function UploadDropzone({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+
+    if (requireAuth && !requireAuth()) return;
 
     const file = e.dataTransfer.files?.[0];
 
@@ -113,7 +117,10 @@ export default function UploadDropzone({
           <div className="flex w-full flex-col items-center justify-center gap-3 sm:flex-row">
             <button
               type="button"
-              onClick={() => inputRef.current?.click()}
+              onClick={() => {
+                if (requireAuth && !requireAuth()) return;
+                inputRef.current?.click();
+              }}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--teal)] px-6 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-soft)] transition-all hover:bg-[var(--teal-deep)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] sm:w-auto"
             >
               <span className="material-symbols-outlined text-lg" aria-hidden>
@@ -125,7 +132,10 @@ export default function UploadDropzone({
             <button
               type="button"
               disabled={!sampleReady}
-              onClick={onRunSample}
+              onClick={() => {
+                if (requireAuth && !requireAuth()) return;
+                onRunSample?.();
+              }}
               className={[
                 "inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-6 py-2.5 text-sm font-semibold shadow-[var(--shadow-soft)] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] sm:w-auto",
                 sampleReady

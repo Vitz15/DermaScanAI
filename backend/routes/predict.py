@@ -1,8 +1,14 @@
 import time
+import uuid
 import base64
 import binascii
-from fastapi import APIRouter, HTTPException
+from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException, Depends
 from schemas.response_models import PredictResponse, PredictionDetail
+from routes.deps import get_current_user
+from sqlalchemy.orm import Session
+from db.session import get_db
+from db.models import AnalysisHistory, User
 from services.model_service import predict as run_prediction, generate_gradcam
 from services.gemini_client import generate_explanation
 from services.prompts import DISCLAIMER_TEXT
@@ -11,9 +17,11 @@ router = APIRouter()
 
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
+def _generate_analysis_id() -> str:
+    return f"DS-{uuid.uuid4().hex[:5].upper()}"
 
 @router.post("/api/predict")
-def predict(payload: dict):
+def predict(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     start = time.time()
 
     image_b64 = payload.get("image")
@@ -51,8 +59,30 @@ def predict(payload: dict):
     )
 
     elapsed_ms = int((time.time() - start) * 1000)
+    analysis_id = _generate_analysis_id()
+    created_at = datetime.now(timezone.utc)
 
+    try:
+        record = AnalysisHistory(
+            id=analysis_id,
+            user_id=current_user.id,
+            predicted_class=result["class"],
+            class_label_readable=result["class_label_readable"],
+            confidence=result["confidence"],
+            all_probabilities=result["all_probabilities"],
+            original_image=image_b64,
+            gradcam_heatmap=heatmap_b64,
+            llm_explanation=explanation,
+            processing_time_ms=elapsed_ms,
+            created_at=created_at,
+        )
+        db.add(record)
+        db.commit()
+    except Exception:
+        db.rollback()
     return PredictResponse(
+        analysis_id=analysis_id,
+        created_at=created_at,
         prediction=PredictionDetail(
             **{"class": result["class"]},
             class_label_readable=result["class_label_readable"],
