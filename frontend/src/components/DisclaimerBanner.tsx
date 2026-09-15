@@ -15,7 +15,7 @@ export default function DisclaimerBanner({
         <span>
           <strong>Clinical &amp; Regulatory Notice:</strong>{" "}
           {compact
-            ? "Educational portfolio project — not a substitute for medical consultation."
+            ? "Educational project — not a substitute for medical consultation."
             : "DermaScan AI is an open research & educational demonstration model based on the HAM10000 dataset. This system is NOT a diagnostic medical device and does not replace evaluation by a dermatology specialist."}
         </span>
       </div>

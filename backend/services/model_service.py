@@ -7,12 +7,12 @@ from tensorflow.keras.applications.efficientnet import preprocess_input
 
 CLASS_LABELS = {
     "akiec": "Actinic Keratosis",
-    "bcc": "Karsinoma Sel Basal",
-    "bkl": "Keratosis Benigna",
+    "bcc": "Basal Cell Carcinoma",
+    "bkl": "Benign Keratosis",
     "df": "Dermatofibroma",
-    "mel": "Melanoma (waspada tinggi)",
-    "nv": "Nevus (tahi lalat umum)",
-    "vasc": "Lesi Vaskular",
+    "mel": "Melanoma",
+    "nv": "Nevus",
+    "vasc": "Vascular Lesion",
 }
 
 IMG_SIZE = 224

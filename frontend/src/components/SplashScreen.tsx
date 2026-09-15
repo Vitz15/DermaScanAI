@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 export default function SplashScreen() {
@@ -53,35 +54,16 @@ export default function SplashScreen() {
       }
     >
       <div className="flex items-center gap-3">
-        <svg
-          className="splash-ring-in"
-          width="32"
-          height="32"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden
-        >
-          <circle cx="12" cy="12" r="9" stroke="#F2C879" strokeWidth="1.4" />
-          <circle cx="12" cy="12" r="4.5" stroke="#F2C879" strokeWidth="1.4" />
-          <line
-            x1="12"
-            y1="1.5"
-            x2="12"
-            y2="5"
-            stroke="#F2C879"
-            strokeWidth="1.4"
-            strokeLinecap="round"
+        <div className="splash-logo-in">
+          <Image
+            src="/logo/Logo.png"
+            alt="DermaScanAI"
+            width={48}
+            height={48}
+            className="h-12 w-12 object-contain"
+            priority
           />
-          <line
-            x1="12"
-            y1="19"
-            x2="12"
-            y2="22.5"
-            stroke="#F2C879"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
-        </svg>
+        </div>
 
         <div className="relative inline-block overflow-hidden">
           <span className="splash-wordmark-reveal font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-white sm:text-4xl">

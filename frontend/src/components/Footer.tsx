@@ -3,7 +3,10 @@ export default function Footer() {
     <footer className="mt-auto border-t border-[var(--border)] bg-[var(--card)] py-10">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 text-xs text-[var(--ink-muted)] sm:flex-row">
         <div className="flex items-center gap-2 font-[family-name:var(--font-display)]">
-          <span className="font-bold text-[var(--ink)]">DermaScan AI</span>
+          <span className="font-bold text-[var(--ink)]">
+            DermaScan
+            <span className="font-semibold text-[var(--teal)]">AI</span>
+          </span>
           <span>© 2026</span>
           <span>•</span>
           <span>HAM10000 Open Research</span>
@@ -20,7 +23,7 @@ export default function Footer() {
           </a>
 
           <a
-            href="https://github.com"
+            href="https://github.com/Vitz15/DermaScanAI"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 transition-colors hover:text-[var(--teal)]"

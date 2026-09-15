@@ -22,12 +22,21 @@ const CLASS_LABELS: Record<string, string> = {
   vasc: "Vascular Lesion",
 };
 
+function generateAnalysisId(): string {
+  const random = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `DS-${random}`;
+}
+
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PredictResponse | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedSample, setSelectedSample] = useState<SampleItem | null>(null);
+  const [analysisMeta, setAnalysisMeta] = useState<{
+    id: string;
+    timestamp: Date;
+  } | null>(null);
 
   const runPrediction = async (file: File) => {
     setError(null);
@@ -40,6 +49,7 @@ export default function Home() {
       const base64 = await fileToBase64(file);
       const response = await predictImage(base64);
       setResult(response);
+      setAnalysisMeta({ id: generateAnalysisId(), timestamp: new Date() });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "An unexpected error occurred.";
@@ -78,21 +88,18 @@ export default function Home() {
     setError(null);
     setPreviewUrl(null);
     setSelectedSample(null);
+    setAnalysisMeta(null);
   };
 
   return (
     <div className="flex min-h-screen flex-col overflow-x-hidden">
-      {/* Do not modify */}
       <SplashScreen />
 
-      <Nav />
+      <Nav hasResult={!!result} onGoToWorkspace={handleReset} />
       <DisclaimerBanner compact />
 
       {!result ? (
         <main className="flex-1">
-          {/* =====================================================
-              HERO
-          ====================================================== */}
           <section className="mx-auto max-w-4xl px-6 pb-12 pt-16 text-center">
             <div className="mb-6 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--teal-soft)] px-3 py-1 font-[family-name:var(--font-display)] text-xs font-medium">
               <span className="font-semibold text-[var(--teal)]">
@@ -117,9 +124,6 @@ export default function Home() {
             </p>
           </section>
 
-          {/* =====================================================
-              DEMO CARD (Upload + Sample Gallery)
-          ====================================================== */}
           <section id="demo" className="mx-auto max-w-4xl px-6 pb-20">
             <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow-card)]">
               <UploadDropzone
@@ -137,13 +141,6 @@ export default function Home() {
             </div>
           </section>
 
-          {/* =====================================================
-              STATS STRIP
-              IMPORTANT: the two values marked "—" are PLACEHOLDERS.
-              Replace them with the actual model evaluation results
-              from the Kaggle notebook before publishing. Do not use
-              fabricated numbers.
-          ====================================================== */}
           <section className="border-y border-[var(--border)] bg-[var(--card)] py-12">
             <div className="mx-auto grid max-w-5xl grid-cols-2 gap-8 px-6 text-center md:grid-cols-4">
               <div>
@@ -195,10 +192,6 @@ export default function Home() {
               </div>
             </div>
           </section>
-
-          {/* =====================================================
-              HOW IT WORKS
-          ====================================================== */}
           <HowItWorks />
         </main>
       ) : (
@@ -209,6 +202,8 @@ export default function Home() {
               originalImageUrl={previewUrl!}
               labels={CLASS_LABELS}
               onReset={handleReset}
+              analysisId={analysisMeta?.id ?? "—"}
+              timestamp={analysisMeta?.timestamp ?? new Date()}
             />
           </div>
         </main>

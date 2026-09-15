@@ -1,32 +1,58 @@
 import os
-import google.generativeai as genai
+import io
+from PIL import Image
+from google import genai
+from google.genai import types
 from services.prompts import SYSTEM_INSTRUCTION, build_explanation_prompt
 
-_configured = False
+_client = None
 
 
-def _ensure_configured():
-    global _configured
-    if not _configured:
+def _get_client():
+    global _client
+    if _client is None:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY belum diset di .env")
-        genai.configure(api_key=api_key)
-        _configured = True
+            raise RuntimeError("GEMINI_API_KEY is not set in .env")
+        _client = genai.Client(api_key=api_key)
+    return _client
 
 
-def generate_explanation(class_label: str, confidence: float) -> str:
+def generate_explanation(
+    class_label: str,
+    confidence: float,
+    class_code: str = "",
+    original_image_bytes: bytes | None = None,
+    heatmap_image_bytes: bytes | None = None,
+) -> str:
+    """Call Gemini for a natural-language explanation. If image bytes are
+    provided, the model receives the original lesion photo and the Grad-CAM
+    heatmap alongside the text prompt, so the explanation can reference what
+    is actually visible in the image rather than only the class/confidence
+    numbers. class_code (e.g. "mel", "bcc", "nv") determines the risk-tier
+    tone in the prompt. Disclaimer is NOT included here, it is appended
+    separately in routes/predict.py."""
     try:
-        _ensure_configured()
-        model = genai.GenerativeModel(
-            "gemini-2.0-flash",
-            system_instruction=SYSTEM_INSTRUCTION,
+        client = _get_client()
+        prompt = build_explanation_prompt(class_label, confidence, class_code)
+
+        content_parts: list = [prompt]
+
+        if original_image_bytes:
+            content_parts.append(Image.open(io.BytesIO(original_image_bytes)))
+        if heatmap_image_bytes:
+            content_parts.append(Image.open(io.BytesIO(heatmap_image_bytes)))
+
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=content_parts,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+            ),
         )
-        prompt = build_explanation_prompt(class_label, confidence)
-        response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         return (
-            f"Penjelasan otomatis sedang tidak tersedia ({type(e).__name__}). "
-            f"Model mendeteksi kategori: {class_label}."
+            f"Automatic explanation is currently unavailable ({type(e).__name__}). "
+            f"The model detected category: {class_label}."
         )

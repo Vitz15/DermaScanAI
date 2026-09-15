@@ -1,13 +1,82 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Image from "next/image";
-import ScanRing from "./ScanRing";
 import ProbabilityBars from "./ProbabilityBars";
 import { PredictResponse, getRiskTier } from "@/lib/types";
+import ReactMarkdown from "react-markdown";
 
 interface ResultPanelProps {
   result: PredictResponse;
   originalImageUrl: string;
   labels: Record<string, string>;
   onReset: () => void;
+  analysisId: string;
+  timestamp: Date;
+}
+
+const CLASS_DESCRIPTIONS: Record<string, string> = {
+  mel: "A serious form of skin cancer",
+  bcc: "The most common type of skin cancer",
+  akiec: "A precancerous skin condition",
+  nv: "A common, non-cancerous mole",
+  bkl: "A non-cancerous skin growth",
+  df: "A benign skin growth",
+  vasc: "A benign vascular growth",
+};
+
+function parseGeminiExplanation(text: string) {
+  const sections = {
+    overview: "",
+    whatImagesShow: [] as string[],
+    whyThisMatters: "",
+    recommendedNextStep: "",
+  };
+
+  if (!text) return sections;
+
+  const overviewMatch = text.match(
+    /##\s*Overview\s*\n([\s\S]*?)(?=##\s*What the Images Show|$)/i,
+  );
+  const imagesMatch = text.match(
+    /##\s*What the Images Show\s*\n([\s\S]*?)(?=##\s*Why This Matters|$)/i,
+  );
+  const mattersMatch = text.match(
+    /##\s*Why This Matters\s*\n([\s\S]*?)(?=##\s*Recommended Next Step|$)/i,
+  );
+  const nextStepMatch = text.match(
+    /##\s*Recommended Next Step\s*\n([\s\S]*?)$/i,
+  );
+
+  if (overviewMatch) sections.overview = overviewMatch[1].trim();
+  if (mattersMatch) sections.whyThisMatters = mattersMatch[1].trim();
+  if (nextStepMatch) sections.recommendedNextStep = nextStepMatch[1].trim();
+
+  if (imagesMatch) {
+    const rawImagesText = imagesMatch[1].trim();
+    const bulletLines = rawImagesText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("-") || line.startsWith("*"))
+      .map((line) => line.replace(/^[-*]\s*/, "").trim());
+
+    if (bulletLines.length > 0) {
+      sections.whatImagesShow = bulletLines;
+    } else {
+      sections.whatImagesShow = [rawImagesText];
+    }
+  }
+
+  if (
+    !sections.overview &&
+    sections.whatImagesShow.length === 0 &&
+    !sections.whyThisMatters &&
+    !sections.recommendedNextStep
+  ) {
+    sections.overview = text.trim();
+  }
+
+  return sections;
 }
 
 export default function ResultPanel({
@@ -15,6 +84,8 @@ export default function ResultPanel({
   originalImageUrl,
   labels,
   onReset,
+  analysisId,
+  timestamp,
 }: ResultPanelProps) {
   const {
     prediction,
@@ -24,320 +95,605 @@ export default function ResultPanel({
     processing_time_ms,
   } = result;
 
+  const formattedTimestamp = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(timestamp);
   const risk = getRiskTier(prediction.class);
   const confidencePct = prediction.confidence * 100;
+  const isHighRisk = risk.tone === "coral";
+
+  const [heatmapOpacity, setHeatmapOpacity] = useState(80);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+
+  const toggleView = () => {
+    if (showHeatmap) {
+      setHeatmapOpacity(0);
+      setShowHeatmap(false);
+    } else {
+      setHeatmapOpacity(80);
+      setShowHeatmap(true);
+    }
+  };
+
+  const explanationSections = useMemo(
+    () => parseGeminiExplanation(llm_explanation),
+    [llm_explanation],
+  );
+
+  const radius = 30;
+  const circumference = 2 * Math.PI * radius;
+  const clampedPct = Math.min(100, Math.max(0, confidencePct));
+  const strokeDashoffset = circumference - (clampedPct / 100) * circumference;
 
   return (
-    <div className="space-y-7 sm:space-y-8">
+    <div className="space-y-7">
       {/* HEADER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[var(--teal)]" />
-            <span className="font-[family-name:var(--font-mono)] text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--teal)]">
-              Analysis Complete
+      <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow-card)] md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2 font-[family-name:var(--font-mono)] text-xs text-[var(--ink-muted)]">
+            <span className="rounded bg-[var(--surface)] px-2 py-0.5 font-medium text-slate-700">
+              ID #{analysisId}
             </span>
+            <span>•</span>
+            <span>Calibrated Dermoscopy</span>
+            <span>•</span>
+            <span>{formattedTimestamp}</span>
           </div>
 
-          <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-[var(--ink)] sm:text-4xl">
-            Analysis Results
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight text-[var(--ink)] md:text-[1.75rem]">
+              Skin Lesion Analysis Report
+            </h1>
 
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--ink-muted)]">
-            Here are the model's classification results along with a
-            visualization of the focus area and probability distribution.
-          </p>
+            {isHighRisk && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/80 bg-rose-50 px-3 py-1 text-xs font-semibold tracking-wide text-rose-700">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" />
+                High Risk Indicated
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="rounded-xl border border-[var(--border)] bg-white px-4 py-3 shadow-[var(--shadow-soft)]">
-          <p className="font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-wider text-[var(--ink-muted)]">
-            PROCESSING TIME
-          </p>
-          <p className="mt-1 font-[family-name:var(--font-mono)] text-sm font-semibold text-[var(--ink)]">
-            {processing_time_ms} ms
-          </p>
+        <div className="flex items-center gap-6 border-t border-[var(--border)] pt-3 text-xs text-[var(--ink-muted)] md:border-l md:border-t-0 md:pl-6 md:pt-0">
+          <div>
+            <span className="block font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-wider text-[var(--ink-muted)]">
+              Inference Time
+            </span>
+            <span className="font-[family-name:var(--font-mono)] text-sm font-semibold text-[var(--ink)]">
+              {processing_time_ms} ms
+            </span>
+          </div>
+          <div>
+            <span className="block font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-wider text-[var(--ink-muted)]">
+              Dataset Basis
+            </span>
+            <span className="text-sm font-medium text-[var(--ink)]">
+              HAM10000 Test
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* MAIN PREDICTION */}
-      <section className="overflow-hidden rounded-[2rem] border border-[var(--border)] bg-white shadow-[var(--shadow-card)]">
-        <div className="grid lg:grid-cols-[220px_1fr]">
-          <div className="flex items-center justify-center border-b border-[var(--border)] bg-[var(--bg)] p-8 lg:border-b-0 lg:border-r">
-            <ScanRing
-              percentage={confidencePct}
-              tone={risk.tone}
-              size={170}
-              strokeWidth={8}
-            >
-              <div className="text-center">
-                <div className="font-[family-name:var(--font-mono)] text-3xl font-semibold tracking-tight text-[var(--ink)]">
-                  {confidencePct.toFixed(0)}%
+      <div className="grid grid-cols-1 items-stretch gap-7 lg:grid-cols-12">
+        <div className="flex flex-col lg:col-span-7">
+          <div className="flex h-full flex-col justify-between space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-card)]">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="material-symbols-outlined text-xl text-[var(--teal)]"
+                    aria-hidden
+                  >
+                    biotech
+                  </span>
+                  <h2 className="font-[family-name:var(--font-display)] text-sm font-semibold text-[var(--ink)] sm:text-base">
+                    Grad-CAM &amp; Original Lesion View
+                  </h2>
                 </div>
 
-                <div className="mt-1 text-[10px] uppercase tracking-wider text-[var(--ink-muted)]">
-                  confidence
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={toggleView}
+                    className="flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--ink-muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--ink)]"
+                  >
+                    <span
+                      className="material-symbols-outlined text-sm"
+                      aria-hidden
+                    >
+                      compare
+                    </span>
+                    <span>
+                      {showHeatmap ? "Mode: Overlay" : "Mode: Original"}
+                    </span>
+                  </button>
                 </div>
               </div>
-            </ScanRing>
-          </div>
 
-          <div className="flex flex-col justify-center p-7 sm:p-9">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider"
-                style={{
-                  backgroundColor:
-                    risk.tone === "coral"
-                      ? "var(--coral-soft)"
-                      : "var(--teal-soft)",
-                  color: risk.tone === "coral" ? "var(--coral)" : "var(--teal)",
-                }}
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{
-                    backgroundColor:
-                      risk.tone === "coral" ? "var(--coral)" : "var(--teal)",
-                  }}
+              <div className="relative aspect-[4/3] w-full select-none overflow-hidden rounded-xl bg-slate-900 shadow-inner">
+                <Image
+                  src={originalImageUrl}
+                  alt="Uploaded dermoscopy image"
+                  fill
+                  unoptimized
+                  className="object-cover"
                 />
-                {risk.label}
-              </span>
+                <Image
+                  src={`data:image/png;base64,${gradcam_heatmap}`}
+                  alt="Grad-CAM heatmap overlay"
+                  fill
+                  unoptimized
+                  className="object-cover transition-opacity duration-150"
+                  style={{ opacity: heatmapOpacity / 100 }}
+                />
 
-              <span className="font-[family-name:var(--font-mono)] text-[10px] text-[var(--ink-muted)]">
-                MODEL PREDICTION
-              </span>
-            </div>
+                <div className="absolute left-3 top-3 z-20 flex gap-2">
+                  <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    Dermoscopy Image
+                  </span>
+                </div>
 
-            <h2 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-[var(--ink)]">
-              {prediction.class_label_readable}
-            </h2>
+                <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900/85 px-3 py-1.5 backdrop-blur-md">
+                  <span className="font-[family-name:var(--font-mono)] text-[10px] text-slate-300">
+                    Min
+                  </span>
+                  <div className="h-2 w-20 rounded-full bg-gradient-to-r from-sky-400 via-amber-400 to-rose-600" />
+                  <span className="font-[family-name:var(--font-mono)] text-[10px] text-slate-300">
+                    Max
+                  </span>
+                </div>
+              </div>
 
-            <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--ink-muted)]">
-              This score indicates the model's level of confidence in the
-              selected predicted class. This value is not a measure of medical
-              diagnostic certainty.
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-2">
-              <span className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-[family-name:var(--font-mono)] text-[10px] text-[var(--ink-muted)]">
-                EfficientNetB3
-              </span>
-
-              <span className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-[family-name:var(--font-mono)] text-[10px] text-[var(--ink-muted)]">
-                7 classes
-              </span>
-
-              <span className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-[family-name:var(--font-mono)] text-[10px] text-[var(--ink-muted)]">
-                Grad-CAM
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* VISUAL EVIDENCE */}
-      <section>
-        <div className="mb-4 flex items-end justify-between">
-          <div>
-            <p className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.16em] text-[var(--teal)]">
-              Visual Explanation
-            </p>
-
-            <h3 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold text-[var(--ink)]">
-              Understanding the model's focus
-            </h3>
-          </div>
-
-          <span className="hidden text-xs text-[var(--ink-muted)] sm:block">
-            Original vs Grad-CAM
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <figure className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-white shadow-[var(--shadow-soft)]">
-            <div className="relative aspect-square overflow-hidden bg-[var(--surface)]">
-              <Image
-                src={originalImageUrl}
-                alt="Uploaded skin lesion photo"
-                width={600}
-                height={600}
-                className="result-image h-full w-full object-cover"
-                unoptimized
-              />
-
-              <div className="absolute left-4 top-4 rounded-full border border-white/60 bg-white/90 px-3 py-1.5 backdrop-blur">
-                <span className="font-[family-name:var(--font-mono)] text-[9px] font-medium uppercase tracking-wider text-[var(--ink)]">
-                  Original
-                </span>
+              <div className="space-y-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5 font-medium text-[var(--ink)]">
+                    <span
+                      className="material-symbols-outlined text-sm text-[var(--teal)]"
+                      aria-hidden
+                    >
+                      opacity
+                    </span>
+                    AI Heatmap Transparency
+                  </span>
+                  <span className="font-[family-name:var(--font-mono)] text-xs font-semibold text-[var(--teal)]">
+                    {heatmapOpacity}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] font-medium text-[var(--ink-muted)]">
+                    Original
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={heatmapOpacity}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setHeatmapOpacity(v);
+                      setShowHeatmap(v > 0);
+                    }}
+                    className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 accent-[var(--teal)]"
+                  />
+                  <span className="text-[11px] font-medium text-[var(--ink-muted)]">
+                    Full Heatmap
+                  </span>
+                </div>
               </div>
             </div>
 
-            <figcaption className="px-5 py-4">
-              <p className="text-sm font-semibold text-[var(--ink)]">
-                Analyzed photo
-              </p>
-              <p className="mt-1 text-xs leading-5 text-[var(--ink-muted)]">
-                The original image submitted to the classification pipeline.
-              </p>
-            </figcaption>
-          </figure>
-
-          <figure className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-white shadow-[var(--shadow-soft)]">
-            <div className="relative aspect-square overflow-hidden bg-[var(--surface)]">
-              <Image
-                src={`data:image/png;base64,${gradcam_heatmap}`}
-                alt="Grad-CAM heatmap showing the model's focus area"
-                width={600}
-                height={600}
-                className="result-image h-full w-full object-cover"
-                unoptimized
-              />
-
-              <div className="absolute left-4 top-4 rounded-full border border-white/60 bg-white/90 px-3 py-1.5 backdrop-blur">
-                <span className="font-[family-name:var(--font-mono)] text-[9px] font-medium uppercase tracking-wider text-[var(--teal)]">
-                  Grad-CAM
-                </span>
-              </div>
-            </div>
-
-            <figcaption className="px-5 py-4">
-              <p className="text-sm font-semibold text-[var(--ink)]">
-                Model focus area
-              </p>
-              <p className="mt-1 text-xs leading-5 text-[var(--ink-muted)]">
-                The heatmap helps visualize the areas that contributed to the
-                model's decision.
-              </p>
-            </figcaption>
-          </figure>
-        </div>
-      </section>
-
-      {/* EXPLANATION */}
-      <section className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-white shadow-[var(--shadow-soft)]">
-        <div className="border-b border-[var(--border)] px-6 py-5 sm:px-7">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--teal-soft)]">
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--teal)"
-                strokeWidth="1.7"
+            <div className="flex items-start gap-3 rounded-xl border border-emerald-100/80 bg-emerald-50/50 p-3 text-xs text-slate-700">
+              <span
+                className="material-symbols-outlined mt-0.5 shrink-0 text-lg text-[var(--teal)]"
                 aria-hidden
               >
-                <path
-                  d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            <div>
-              <p className="font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-[var(--teal)]">
-                Natural Language
-              </p>
-
-              <h3 className="mt-0.5 font-[family-name:var(--font-display)] text-base font-semibold text-[var(--ink)]">
-                Model explanation
-              </h3>
+                insights
+              </span>
+              <div className="space-y-0.5 leading-relaxed">
+                <p className="font-semibold text-slate-900">
+                  Model Attention Focus (Attention Map)
+                </p>
+                <p className="text-[11px] text-[var(--ink-muted)]">
+                  Red intensity marks the highest feature contributions (such as
+                  contour asymmetry and atypical pigment distribution) that most
+                  strongly influenced this prediction.
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-6 sm:px-7">
-          <p className="whitespace-pre-line text-sm leading-7 text-[var(--ink-soft)]">
-            {llm_explanation}
-          </p>
-        </div>
-      </section>
-
-      {/* PROBABILITY */}
-      <section className="rounded-[1.5rem] border border-[var(--border)] bg-white p-6 shadow-[var(--shadow-soft)] sm:p-7">
-        <div className="mb-7 flex items-end justify-between gap-4">
-          <div>
-            <p className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.16em] text-[var(--teal)]">
-              Model Output
-            </p>
-
-            <h3 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold text-[var(--ink)]">
-              Probability distribution
-            </h3>
-          </div>
-
-          <span className="hidden text-right text-[10px] leading-4 text-[var(--ink-muted)] sm:block">
-            All predicted
-            <br />
-            classes
-          </span>
-        </div>
-
-        <ProbabilityBars
-          probabilities={prediction.all_probabilities}
-          labels={labels}
-        />
-      </section>
-
-      {/* DISCLAIMER */}
-      <section className="rounded-[1.5rem] border border-[var(--coral)]/15 bg-[var(--coral-soft)] p-5 sm:p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/70">
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--coral)"
-              strokeWidth="1.8"
-              aria-hidden
+        <div className="flex flex-col lg:col-span-5">
+          <div className="flex h-full flex-col justify-between space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-card)]">
+            <div
+              className={`relative overflow-hidden rounded-xl border p-4 ${
+                isHighRisk
+                  ? "border-rose-200/80 bg-rose-50"
+                  : "border-teal-200/80 bg-teal-50/60"
+              }`}
             >
-              <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
-              <circle cx="12" cy="12" r="9" />
-            </svg>
-          </div>
+              <div
+                className={`flex items-center justify-between border-b pb-2 ${
+                  isHighRisk ? "border-rose-200/60" : "border-teal-200/60"
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`material-symbols-outlined text-base ${
+                      isHighRisk ? "text-rose-600" : "text-[var(--teal)]"
+                    }`}
+                  >
+                    {isHighRisk ? "warning" : "verified_user"}
+                  </span>
+                  <span
+                    className={`font-[family-name:var(--font-mono)] text-[11px] font-semibold uppercase tracking-wider ${
+                      isHighRisk ? "text-rose-700" : "text-[var(--teal)]"
+                    }`}
+                  >
+                    Primary Clinical Prediction
+                  </span>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-0.5 font-[family-name:var(--font-mono)] text-[10px] font-bold shadow-sm ${
+                    isHighRisk
+                      ? "border-rose-200/80 text-rose-700"
+                      : "border-teal-200/80 text-[var(--teal)]"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isHighRisk
+                        ? "bg-rose-500 animate-pulse"
+                        : "bg-[var(--teal)]"
+                    }`}
+                  />
+                  {confidencePct >= 85
+                    ? "High Confidence"
+                    : confidencePct >= 60
+                      ? "Moderate Confidence"
+                      : "Low Confidence — Uncertain"}
+                </span>
+              </div>
 
-          <div>
-            <p className="font-[family-name:var(--font-display)] text-sm font-semibold text-[var(--coral)]">
-              Important note
-            </p>
+              <div className="flex items-center justify-between gap-3 pt-3">
+                <div className="space-y-1">
+                  <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold leading-tight tracking-tight text-slate-900">
+                    {prediction.class_label_readable}{" "}
+                    <span
+                      className={`font-extrabold ${
+                        isHighRisk ? "text-rose-600" : "text-[var(--teal)]"
+                      }`}
+                    >
+                      ({prediction.class.toUpperCase()})
+                    </span>
+                  </h2>
+                  <p className="text-xs font-medium leading-normal text-slate-600">
+                    {CLASS_DESCRIPTIONS[prediction.class] ||
+                      "Dermatological Lesion"}
+                  </p>
+                  <div
+                    className={`mt-1.5 inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-semibold ${
+                      isHighRisk
+                        ? "bg-rose-100/60 text-rose-700"
+                        : "bg-teal-100/60 text-[var(--teal)]"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-xs">
+                      {isHighRisk ? "emergency" : "check_circle"}
+                    </span>
+                    <span>
+                      {isHighRisk
+                        ? "High Risk Indicated"
+                        : "Lower Risk Indicated"}
+                    </span>
+                  </div>
+                </div>
 
-            <p className="mt-1.5 text-sm leading-6 text-[var(--ink-soft)]">
-              {disclaimer}
-            </p>
+                <div className="relative flex h-20 w-20 shrink-0 items-center justify-center">
+                  <svg className="h-20 w-20 -rotate-90" viewBox="0 0 72 72">
+                    <circle
+                      className={
+                        isHighRisk ? "text-rose-200/80" : "text-teal-200/80"
+                      }
+                      strokeWidth="6"
+                      stroke="currentColor"
+                      fill="transparent"
+                      r="30"
+                      cx="36"
+                      cy="36"
+                    />
+                    <circle
+                      className={`${
+                        isHighRisk ? "text-rose-600" : "text-[var(--teal)]"
+                      } transition-all duration-700 ease-out motion-reduce:transition-none`}
+                      strokeWidth="6"
+                      strokeDasharray={circumference.toFixed(1)}
+                      strokeDashoffset={strokeDashoffset.toFixed(2)}
+                      strokeLinecap="round"
+                      stroke="currentColor"
+                      fill="transparent"
+                      r="30"
+                      cx="36"
+                      cy="36"
+                    />
+                  </svg>
+                  <div className="absolute flex flex-col items-center justify-center text-center">
+                    <span className="font-[family-name:var(--font-display)] text-base font-extrabold leading-none text-slate-900">
+                      {confidencePct.toFixed(1)}
+                      <span
+                        className={`text-[10px] ${
+                          isHighRisk ? "text-rose-600" : "text-[var(--teal)]"
+                        }`}
+                      >
+                        %
+                      </span>
+                    </span>
+                    <span className="mt-0.5 font-[family-name:var(--font-mono)] text-[8px] font-semibold uppercase text-slate-500">
+                      Confidence
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-1.5">
+                <div className="flex items-center gap-1.5 font-[family-name:var(--font-display)] text-xs font-bold text-slate-900">
+                  <span className="material-symbols-outlined text-sm text-[var(--teal)]">
+                    bar_chart
+                  </span>
+                  <span>Class Distribution (HAM10000)</span>
+                </div>
+                <span className="font-[family-name:var(--font-mono)] text-[10px] font-medium text-slate-500">
+                  7 Tested Diagnoses
+                </span>
+              </div>
+              <ProbabilityBars
+                probabilities={prediction.all_probabilities}
+                labels={labels}
+              />
+            </div>
+
+            <div className="space-y-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-1.5 text-xs">
+                <span className="flex items-center gap-1 font-semibold text-slate-900">
+                  <span className="material-symbols-outlined text-sm text-[var(--teal)]">
+                    verified_user
+                  </span>
+                  Model Evaluation Metrics (HAM10000)
+                </span>
+                <span className="rounded border border-[var(--teal)]/20 bg-[var(--teal-soft)] px-2 py-0.5 font-[family-name:var(--font-mono)] text-[10px] font-semibold text-[var(--teal)]">
+                  Loss: -
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-2">
+                  <span className="block font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-wider text-slate-500">
+                    Sensitivity
+                  </span>
+                  <span className="font-[family-name:var(--font-mono)] text-xs font-bold text-slate-900">
+                    -
+                  </span>
+                </div>
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-2">
+                  <span className="block font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-wider text-slate-500">
+                    Specificity
+                  </span>
+                  <span className="font-[family-name:var(--font-mono)] text-xs font-bold text-slate-900">
+                    -
+                  </span>
+                </div>
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-2">
+                  <span className="block font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-wider text-slate-500">
+                    AUC-ROC
+                  </span>
+                  <span className="font-[family-name:var(--font-mono)] text-xs font-bold text-[var(--teal)]">
+                    -
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* RESET */}
-      <div className="flex justify-center pt-1">
-        <button
-          onClick={onReset}
-          className="group inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-5 py-3 text-sm font-medium text-[var(--ink-soft)] shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 hover:border-[var(--teal)]/30 hover:text-[var(--teal)] hover:shadow-[var(--shadow-card)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
-        >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
+      <div className="space-y-5 rounded-2xl border border-sky-200/80 bg-gradient-to-b from-sky-50/40 to-[var(--card)] p-6 shadow-[var(--shadow-card)]">
+        <div className="flex flex-col justify-between gap-3 border-b border-sky-100 pb-3.5 sm:flex-row sm:items-center">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200/60 bg-sky-100/70 px-3 py-1.5 text-xs font-semibold text-sky-800">
+            <span className="material-symbols-outlined text-sm text-sky-600">
+              auto_awesome
+            </span>
+            <span>Gemini AI Clinical Summary</span>
+          </div>
+          <div className="flex items-center gap-2 font-[family-name:var(--font-mono)] text-[11px] text-slate-500">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <span>
+              Gemini 3.6 Flash / Clinical Multimodal Explanation Engine
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-3">
+          <div className="flex flex-col justify-between space-y-4 rounded-xl border border-slate-200/80 bg-[var(--card)] p-5 shadow-sm">
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 font-[family-name:var(--font-display)] text-xs font-bold text-slate-900">
+                <span className="material-symbols-outlined text-base text-[var(--teal)]">
+                  description
+                </span>
+                <span>Model Explanation: Overview</span>
+              </div>
+              <div className="text-xs leading-relaxed text-[var(--ink-muted)]">
+                <ReactMarkdown
+                  components={{
+                    p: ({ ...props }) => (
+                      <p className="mb-2 leading-relaxed" {...props} />
+                    ),
+                    strong: ({ ...props }) => (
+                      <strong
+                        className="font-semibold text-[var(--ink)]"
+                        {...props}
+                      />
+                    ),
+                  }}
+                >
+                  {explanationSections.overview ||
+                    "Overview explanation is being generated..."}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            {explanationSections.whyThisMatters && (
+              <div className="space-y-1.5 border-t border-slate-100 pt-3">
+                <div className="flex items-center gap-1.5 font-[family-name:var(--font-display)] text-xs font-bold text-slate-900">
+                  <span className="material-symbols-outlined text-sm text-amber-600">
+                    crisis_alert
+                  </span>
+                  <span>Why This Matters</span>
+                </div>
+                <div className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
+                  <ReactMarkdown
+                    components={{
+                      p: ({ ...props }) => (
+                        <p className="mb-1 leading-relaxed" {...props} />
+                      ),
+                      strong: ({ ...props }) => (
+                        <strong
+                          className="font-semibold text-[var(--ink)]"
+                          {...props}
+                        />
+                      ),
+                    }}
+                  >
+                    {explanationSections.whyThisMatters}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col space-y-3 rounded-xl border border-slate-200/80 bg-slate-50 p-5 shadow-sm">
+            <div className="flex items-center gap-1.5 border-b border-slate-200/80 pb-1 font-[family-name:var(--font-display)] text-xs font-bold text-slate-900">
+              <span className="material-symbols-outlined text-base text-sky-700">
+                visibility
+              </span>
+              <span>What the Images Show</span>
+            </div>
+            <div className="flex-grow space-y-3 pt-1 text-xs">
+              {explanationSections.whatImagesShow.length > 0 ? (
+                explanationSections.whatImagesShow.map((point, idx) => (
+                  <div key={idx} className="flex items-start gap-2.5">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--teal)]" />
+                    <div className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
+                      <ReactMarkdown
+                        components={{
+                          p: ({ ...props }) => (
+                            <p className="inline" {...props} />
+                          ),
+                          strong: ({ ...props }) => (
+                            <strong
+                              className="font-semibold text-[var(--ink)]"
+                              {...props}
+                            />
+                          ),
+                        }}
+                      >
+                        {point}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[11px] leading-relaxed text-[var(--ink-muted)]">
+                  Visual attention analysis details are currently processing.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between space-y-3 rounded-xl border border-sky-100 bg-sky-50/80 p-5 shadow-sm">
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 font-[family-name:var(--font-display)] text-xs font-bold text-sky-950">
+                <span className="material-symbols-outlined text-base text-sky-700">
+                  clinical_notes
+                </span>
+                <span>Recommended Next Step</span>
+              </div>
+              <div className="text-xs leading-relaxed text-sky-900">
+                <ReactMarkdown
+                  components={{
+                    p: ({ ...props }) => (
+                      <p className="mb-2 leading-relaxed" {...props} />
+                    ),
+                    strong: ({ ...props }) => (
+                      <strong
+                        className="font-semibold text-sky-950"
+                        {...props}
+                      />
+                    ),
+                  }}
+                >
+                  {explanationSections.recommendedNextStep ||
+                    "Consult a certified healthcare provider or dermatologist for in-person evaluation."}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 border-t border-sky-200/60 pt-3">
+              <div className="flex items-start gap-1.5 text-[10px] text-slate-500">
+                <span className="material-symbols-outlined mt-0.5 shrink-0 text-xs text-sky-700">
+                  shield
+                </span>
+                <p className="leading-relaxed">
+                  <strong>This is not a medical diagnosis.</strong> {disclaimer}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-6 py-4 shadow-[var(--shadow-card)] sm:flex-row">
+        <div className="flex items-center gap-2 text-xs text-[var(--ink-muted)]">
+          <span
+            className="material-symbols-outlined text-base text-[var(--teal)]"
             aria-hidden
           >
-            <path
-              d="M3 12a9 9 0 109-9c-2.4 0-4.58.94-6.2 2.47L3 7.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M3 3v4.5h4.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Try Another Photo
-        </button>
+            biotech
+          </span>
+          <span>EfficientNetB3 · Grad-CAM · Gemini API</span>
+        </div>
+
+        <div className="flex w-full items-center gap-3 sm:w-auto sm:justify-end">
+          <button
+            type="button"
+            onClick={onReset}
+            className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-5 text-xs font-semibold text-[var(--ink)] transition-all hover:bg-[var(--surface)] sm:flex-none"
+          >
+            <span
+              className="material-symbols-outlined text-base text-[var(--ink-muted)]"
+              aria-hidden
+            >
+              refresh
+            </span>
+            Analyze Another Sample
+          </button>
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--teal)] px-5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[var(--teal-deep)] sm:flex-none"
+          >
+            <span className="material-symbols-outlined text-base" aria-hidden>
+              picture_as_pdf
+            </span>
+            Print / Save as PDF
+          </button>
+        </div>
       </div>
     </div>
   );

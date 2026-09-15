@@ -23,8 +23,8 @@ export function getRiskTier(className: string): {
   label: string;
 } {
   return HIGH_RISK_CLASSES.has(className)
-    ? { tone: "coral", label: "Waspada Tinggi" }
-    : { tone: "teal", label: "Risiko Lebih Rendah" };
+    ? { tone: "coral", label: "High Risk" }
+    : { tone: "teal", label: "Lower Risk" };
 }
 
 export const HIGH_RISK_CLASSES = new Set(["mel", "bcc", "akiec"]);
